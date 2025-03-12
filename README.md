@@ -1,5 +1,5 @@
 # MyBackup
-### Automated Backup & Docker Sync Script for Raspberry Pi
+### Automated Backup & Docker Sync Script for My Raspberry Pi and Linux MiniPC
 [![GitHub license](https://img.shields.io/github/license/CTinMich/MyBackup)](https://github.com/CTinMich/MyBackup/blob/main/LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/CTinMich/MyBackup)](https://github.com/CTinMich/MyBackup)
 
