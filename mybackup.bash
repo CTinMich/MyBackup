@@ -1,6 +1,16 @@
 #!/bin/bash
+# ==========================================
+# MyBackup - Automated System & Docker Backup
+# Author: CTinMich (https://github.com/CTinMich)
+# Version: 1.0
+# Description: 
+#   - Creates system & Docker backups
+#   - Uses rsync for intelligent mirroring
+#   - Supports per-app rsync ignore rules
+#   - Can be scheduled via cron for automation
+# ==========================================
 
-# Ensure the script is run with sudo
+# Ensure the script runs as sudo
 if [ "$EUID" -ne 0 ]; then
     echo -e "\n\n\e[1;33m=== Re-executing script as root (sudo) ===\e[0m\n\n"
     exec sudo bash "$0" "$@"

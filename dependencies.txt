@@ -1,0 +1,7 @@
+git
+rsync
+tar
+docker
+ssh
+cron
+
