@@ -1,0 +1,13 @@
+# Ignore OS backup tar files (large & changing frequently)
+*.tar.gz
+
+# Ignore log files
+*.log
+
+# Ignore system metadata
+.DS_Store
+*.swp
+
+# Ignore temporary files
+tmp/
+
