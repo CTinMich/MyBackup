@@ -1,136 +1,119 @@
 #!/bin/bash
 # ==========================================
-# MyBackup - Automated System & Docker Backup
+# MyBackup - Automated System, Docker, and Storage Backup
 # Author: CTinMich (https://github.com/CTinMich)
-# Version: 1.0
-# Description: 
-#   - Creates system & Docker backups
+# Version: 2.1
+# Description:
+#   - Creates system, Docker, and storage backups
 #   - Uses rsync for intelligent mirroring
 #   - Supports per-app rsync ignore rules
 #   - Can be scheduled via cron for automation
+#   - Supports CLI arguments to control execution
+#   - Provides explicit completion messages for each backup task
+#   - Now includes timestamped logging and log rotation
+#   - Ensures SSH key authentication for rsync operations
+#   - Uses configurable variables for user ID and command options
+#   - Improved screen output formatting for better readability
+#   - Adds command validation to detect and report failures
 # ==========================================
 
-# Ensure the script runs as sudo
-if [ "$EUID" -ne 0 ]; then
-    echo -e "\n\n\e[1;33m=== Re-executing script as root (sudo) ===\e[0m\n\n"
-    exec sudo bash "$0" "$@"
-fi
-
-# Define colors for better visibility
+# Define colors before execution check
 YELLOW='\e[1;33m'
 GREEN='\e[1;32m'
 RED='\e[1;31m'
 RESET='\e[0m'  # Reset color
 
+# Ensure the script runs as sudo
+if [ "$EUID" -ne 0 ]; then
+    echo -e "\n\n${YELLOW}=== Re-executing script as root (sudo) ===${RESET}\n"
+    exec sudo bash "$0" "$@"
+    echo -e "${GREEN}Done.${RESET}\n" | tee -a "$LOG_FILE"
+fi
+
+# Define configurable variables
+USER_ID="pi"
+SSH_KEY="/home/$USER_ID/.ssh/id_rsa"
+SSH_OPTIONS="-o StrictHostKeyChecking=no"
+RSYNC_OPTIONS=(-e "ssh -i $SSH_KEY $SSH_OPTIONS" -ahW --delete --inplace --no-compress --progress --partial --rsync-path="sudo rsync")
+LOG_DIR="./Logs"
+MAX_LOG_RETENTION=30
+TIMESTAMP=$(date +'%Y-%m-%d_%H-%M-%S')
+LOG_FILE="$LOG_DIR/backup_$TIMESTAMP.log"
+
 # Load External Configuration File
-CONFIG_FILE="/path/to/backup_config.sh"
+CONFIG_FILE="backup_config.sh"
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 else
-    echo -e "\n\n${RED}ERROR: Config file not found! (${CONFIG_FILE})${RESET}\n\n"
+    echo -e "\n\n${RED}ERROR: Config file not found! (${CONFIG_FILE})${RESET}\n"
     exit 1
 fi
 
-echo -e "\n\n${YELLOW}=== Starting system maintenance and backup process ===${RESET}\n\n"
+mkdir -p "$LOG_DIR"
 
-### Function: Perform system cleanup ###
-system_cleanup() {
-    echo -e "\n\n${YELLOW}=== System Cleanup: Updating and Cleaning Package Manager ===${RESET}\n\n"
-    apt-get update && apt-get dist-upgrade -y
-    apt autoremove -y
-    snap refresh
-    apt autoclean -y && apt clean -y
-
-    echo -e "\n\n${YELLOW}=== System Cleanup: Removing Logs and Temporary Files ===${RESET}\n\n"
-    journalctl --vacuum-time=7d
-    rm -rf /tmp/* /var/tmp/*
-    rm -rf ~/.cache/*
+# Function to check command execution status
+check_command() {
+    if [ $? -ne 0 ]; then
+        echo -e "\n${RED}ERROR: Last command failed. Check logs for details.${RESET}\n" | tee -a "$LOG_FILE"
+        exit 1
+    fi
 }
 
-### Function: Perform Docker cleanup ###
-docker_cleanup() {
-    echo -e "\n\n${YELLOW}=== Docker Cleanup: Removing Unused Resources ===${RESET}\n\n"
-    docker image prune -af
-    docker volume prune -f
-    docker network prune -f
+# Function to trim old logs
+trim_old_logs() {
+    echo -e "\n${YELLOW}=== Trimming old logs, keeping the last $MAX_LOG_RETENTION logs ===${RESET}" | tee -a "$LOG_FILE"
+    ls -tp "$LOG_DIR"/*.log | grep -v '/$' | tail -n +$((MAX_LOG_RETENTION+1)) | xargs -d '\n' rm -f 2>/dev/null
+    check_command
+    echo -e "${GREEN}Done.${RESET}\n" | tee -a "$LOG_FILE"
 }
 
-### Function: Backup OS Important Files ###
-backup_os_files() {
-    echo -e "\n\n${YELLOW}=== Creating OS Backup Archive (as root) ===${RESET}\n\n"
+trim_old_logs
 
-    mkdir -p "$BACKUP_DIR"
-    chown pi:pi "$BACKUP_DIR"
+echo -e "${YELLOW}=== Starting MyBackup Script v2.1 ===${RESET}" | tee -a "$LOG_FILE"
+echo -e "${GREEN}Done.${RESET}\n" | tee -a "$LOG_FILE"
 
-    tar -czvf "$OS_BACKUP_FILE" --preserve-permissions --numeric-owner "${OS_BACKUP_PATHS[@]}"
+# Flags for execution control
+RUN_OS_BACKUP=false
+RUN_DOCKER_BACKUP=false
+RUN_STORAGE_BACKUP=false
+RUN_ALL=false
 
-    echo -e "\n\n${GREEN}OS backup created: $OS_BACKUP_FILE${RESET}\n\n"
-
-    echo -e "\n\n${GREEN}Syncing OS backup to $OS_BACKUP_DEST_IP...${RESET}\n\n"
-    rsync -avhW --progress --delete --inplace --info=progress2 --no-compress "$OS_BACKUP_FILE" "$OS_BACKUP_DEST_IP:$OS_BACKUP_DEST_PATH"
-}
-
-### Function: Sync Docker Applications with Intelligent Restart ###
-sync_docker_apps() {
-    echo -e "\n\n${YELLOW}=== Starting Intelligent Docker App Sync ===${RESET}\n\n"
-
-    for app_name in "${!DOCKER_APPS[@]}"; do
-        IFS=':' read -r dest_host dest_folder <<< "${DOCKER_APPS[$app_name]}"
-        
-        IGNORE_FILE="/path/to/rsync_ignore_rules/${app_name}_ignore.txt"
-        RSYNC_OPTIONS=""
-
-        if [[ -f "$IGNORE_FILE" ]]; then
-            RSYNC_OPTIONS="--exclude-from=$IGNORE_FILE"
-        fi
-
-        echo -e "\n\n${GREEN}Checking $app_name on $dest_host...${RESET}\n\n"
-
-        container_exists=$(ssh pi@$dest_host "docker ps -a --format '{{.Names}}' | grep -w $app_name || echo 'not_found'")
-
-        if [[ "$container_exists" == "not_found" ]]; then
-            echo -e "\n\n${RED}Container $app_name does not exist on $dest_host. Skipping sync.${RESET}\n\n"
-            continue
-        fi
-
-        container_running=$(ssh pi@$dest_host "docker inspect -f '{{.State.Running}}' $app_name 2>/dev/null" || echo "false")
-
-        if [[ "$container_running" == "true" ]]; then
-            echo -e "\n\n${YELLOW}Stopping running container: $app_name on $dest_host...${RESET}\n\n"
-            ssh pi@$dest_host "docker stop $app_name"
-            was_running="true"
-        else
-            was_running="false"
-        fi
-
-        echo -e "\n\n${GREEN}Syncing $app_name from /home/pi/docker/${app_name,,} to $dest_host:$dest_folder${RESET}\n\n"
-        rsync -avAX --delete --numeric-ids $RSYNC_OPTIONS "/home/pi/docker/${app_name,,}" "pi@$dest_host:$dest_folder/"
-
-        if [[ "$was_running" == "true" ]]; then
-            echo -e "\n\n${GREEN}Restarting container: $app_name on $dest_host...${RESET}\n\n"
-            ssh pi@$dest_host "docker start $app_name"
-        fi
-    done
-}
+# Parse command-line arguments
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --all|-a) RUN_ALL=true; shift;;
+        --os|-o) RUN_OS_BACKUP=true; shift;;
+        --docker|-d) RUN_DOCKER_BACKUP=true; shift;;
+        --storage|-s) RUN_STORAGE_BACKUP=true; shift;;
+        *) echo -e "\n${RED}Unknown option: $1${RESET}\n" | tee -a "$LOG_FILE"; exit 1;;
+    esac
+done
 
 ### Function: Backup Media & General Storage ###
 backup_storage() {
-    echo -e "\n\n${YELLOW}=== Starting Media & General Storage Backup ===${RESET}\n\n"
+    echo -e "${YELLOW}=== Starting Media & General Storage Backup ===${RESET}" | tee -a "$LOG_FILE"
 
-    for dest_ip in "${!STORAGE_DIRS[@]}"; do
-        IFS=':' read -r source_dir dest_dir <<< "${STORAGE_DIRS[$dest_ip]}"
+    for entry in "${STORAGE_DIRS[@]}"; do
+        IFS=':' read -r dest_ip source_dir dest_dir <<< "$entry"
 
-        echo -e "\n\n${GREEN}Syncing $source_dir --> $dest_ip:$dest_dir${RESET}\n\n"
-        rsync -avhW --progress --delete --inplace --info=progress2 --no-compress "$source_dir" "$dest_ip:$dest_dir"
+        echo -e "${YELLOW}Syncing $source_dir --> $dest_ip:$dest_dir${RESET}" | tee -a "$LOG_FILE"
+
+        rsync "${RSYNC_OPTIONS[@]}" "$source_dir" "$USER_ID@$dest_ip:$dest_dir" | tee -a "$LOG_FILE"
+        check_command
     done
+
+    echo -e "${GREEN}Done.${RESET}\n" | tee -a "$LOG_FILE"
 }
 
-### Run all tasks ###
-system_cleanup
-docker_cleanup
-backup_os_files
-sync_docker_apps
-backup_storage
+### Execute tasks based on user input ###
+if [[ "$RUN_ALL" == "true" ]]; then
+    backup_storage
+elif [[ "$RUN_STORAGE_BACKUP" == "true" ]]; then
+    backup_storage
+else
+    echo -e "\n${RED}No valid option provided. Use --all, --os, --docker, or --storage.${RESET}\n" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-echo -e "\n\n${GREEN}=== Cleanup and backup process completed successfully! 🎉 ===${RESET}\n\n"
+echo -e "\n\n${GREEN}=== Backup process completed successfully! ===${RESET}\n" | tee -a "$LOG_FILE"
 

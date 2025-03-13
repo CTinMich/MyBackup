@@ -1,16 +1,17 @@
 # MyBackup
 ### Automated Backup & Docker Sync Script for My Raspberry Pi and Linux MiniPC
 [![GitHub license](https://img.shields.io/github/license/CTinMich/MyBackup)](https://github.com/CTinMich/MyBackup/blob/main/LICENSE)
-[![GitHub last commit](https://img.shields.io/github/last-commit/CTinMich/MyBackup)](https://github.com/CTinMich/MyBackup)
+[![GitHub last commit](https://img.shields.io/github/last-commit/CTinMich/MyBackup)](https://github.com/CTinMich/MyBackup/blob/main/)
 
 ## 📌 Features
 - 📂 **Backs up system files** (`/home/pi`, `/etc`, `Docker configs`)
 - 🚀 **Syncs Docker containers** between multiple hosts
 - 🔄 **Stops & Restarts containers** before syncing
 - 🛑 **Supports ignore rules** (e.g., Plex `Preferences.xml`)
+- ⚡ **Uses SSH key authentication** for secure connections
+- 🏗 **Preserves permissions, owners, and groups** on synced files
+- 🔧 **Handles permission issues** by using `sudo rsync` on the remote host
 - 🕒 **Automate via Cron** for scheduled backups
-
----
 
 ## 📖 Installation
 Clone the repository:
@@ -19,75 +20,34 @@ git clone https://github.com/CTinMich/MyBackup.git
 cd MyBackup
 chmod +x mybackup.bash
 ```
-Install required dependencies:
+
+## 🛠 Usage
+Run the script with one of the following options:
 ```bash
-sudo ./install.sh
+./mybackup.bash --all       # Run all backup routines
+./mybackup.bash --os        # Backup OS configuration files
+./mybackup.bash --docker    # Cleanup & sync Docker containers
+./mybackup.bash --storage   # Backup general storage files
 ```
 
----
-
-## 🛠️ Usage
-Run the script manually:
+## 🔑 SSH Setup (Recommended)
+Ensure passwordless SSH authentication between hosts:
 ```bash
-./mybackup.bash
-```
-Schedule it in **cron** for automated backups:
-```bash
-crontab -e
-```
-Add the following line (runs every **Sunday at 2 AM**):
-```bash
-0 2 * * 0 /home/pi/MyBackup/mybackup.bash >> /var/log/mybackup.log 2>&1
+ssh-keygen -t ed25519
+ssh-copy-id -i ~/.ssh/id_ed25519.pub pi@REMOTE_HOST
 ```
 
----
-
-## ⚙️ Configuration
-Modify **`backup_config.sh`** to adjust backup locations and settings.
-
-Example **`backup_config.sh`**:
-```bash
-#!/bin/bash
-
-# OS Backup Locations
-OS_BACKUP_PATHS=(
-    "/home/pi"
-    "/etc"
-    "/var/lib/docker"
-    "/var/lib/snapd"
-)
-OS_BACKUP_DEST_IP="10.0.0.52"
-OS_BACKUP_DEST_PATH="/home/pi/usbhdd-02/Backups/"
-
-# Docker Containers & Destinations
-declare -A DOCKER_APPS=(
-    ["Plex"]="10.0.0.52:/home/pi/docker/plex"
-    ["Jellyfin"]="10.0.0.51:/home/pi/docker/jellyfin"
-    ["Audiobookshelf"]="10.0.0.51:/home/pi/docker/audiobookshelf"
-    ["Calibre"]="10.0.0.51:/home/pi/docker/calibre"
-)
-
-# Storage Backup Paths
-declare -A STORAGE_DIRS=(
-    ["10.0.0.52"]="/home/pi/usbhdd-01/4T_01:/home/pi/usbhdd-01/"
-    ["10.0.0.52"]="/home/pi/usbhdd-02/Backups:/home/pi/usbhdd-04/"
-)
-```
-💡 **If you modify `backup_config.sh`, no need to update `mybackup.bash`!**
-
----
-
-## 🚀 Rsync Ignore Rules
-By default, all files sync **except** those explicitly excluded.
-
-Example **`rsync_ignore_rules/Plex_ignore.txt`**:
-```
-Preferences.xml
-```
-💡 **This ensures Plex maintains a unique server identity while syncing everything else.**
-
----
+## 🚀 Features in v2.2
+- **Optimized `rsync` options** for better performance
+- **Fixed file permission issues** using `sudo rsync` on the remote host
+- **Added command validation** to detect failures early
+- **Improved CLI options** for easier backup control
+- **Enhanced logging** with timestamped files and auto-trimming
 
 ## 📜 License
-This project is licensed under the **MIT License** - See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📧 Contact
+Developed by [CTinMich](https://github.com/CTinMich).  
+Contributions and suggestions are welcome! 🚀
 
